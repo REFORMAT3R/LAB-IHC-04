@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -38,10 +39,6 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -197,7 +194,7 @@ private fun EquipoIdentificado(codigo: String) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun SelectorTipoDanio(
     seleccionado: TipoDanio?,
@@ -207,7 +204,7 @@ fun SelectorTipoDanio(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        TipoDanio.entries.forEach { tipo ->
+        TipoDanio.values().forEach { tipo ->
             FilterChip(
                 selected = tipo == seleccionado,
                 onClick = { onSeleccion(tipo) },
@@ -350,21 +347,17 @@ fun PasosInferiores(pasoActual: Int) {
 }
 
 // ---------- Preview ----------
-@Preview(showBackground = true, widthDp = 360, heightDp = 780)
+@Preview(showBackground = true, backgroundColor = 0xFFFFFFFF, widthDp = 360, heightDp = 780)
 @Composable
-fun DescribirDanioPreview() {
-    var tipo by remember { mutableStateOf<TipoDanio?>(TipoDanio.MONITOR) }
-    var descripcion by remember { mutableStateOf("El monitor no muestra imagen aunque la CPU está encendida.") }
-    var foto by remember { mutableStateOf<Uri?>(null) }
-
+private fun PreviewDescribirDanio() {
     DescribirDanioScreen(
         codigoEquipo = "PC-SISTEMAS-409",
-        tipoSeleccionado = tipo,
-        descripcion = descripcion,
-        fotoUri = foto,
-        onTipoChange = { tipo = it },
-        onDescripcionChange = { descripcion = it },
-        onFotoChange = { foto = it },
+        tipoSeleccionado = null,
+        descripcion = "",
+        fotoUri = null,
+        onTipoChange = {},
+        onDescripcionChange = {},
+        onFotoChange = {},
         onAtras = {},
         onContinuar = {}
     )
