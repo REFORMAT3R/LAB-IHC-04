@@ -4,6 +4,9 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -27,6 +30,10 @@ private object Rutas {
     const val CONFIRMAR = "confirmar"
 }
 
+// ---------- Reglas de validación (Fase 5) ----------
+private val FORMATO_CODIGO = Regex("^[A-Z]{2,4}-[A-Z]+-\\d{3}$") // ej: PC-SISTEMAS-409
+private const val MIN_DESCRIPCION = 10
+
 @Composable
 fun AppNavigation() {
     val nav = rememberNavController()
@@ -40,6 +47,9 @@ fun AppNavigation() {
     var tipo by rememberSaveable { mutableStateOf<TipoDanio?>(null) }
     var descripcion by rememberSaveable { mutableStateOf("") }
     var fotoUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    var mostrarConfirmacion by rememberSaveable { mutableStateOf(false) }
+
+    fun aviso(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
 
     NavHost(navController = nav, startDestination = Rutas.ESCANEAR) {
 
@@ -47,14 +57,19 @@ fun AppNavigation() {
         composable(Rutas.ESCANEAR) {
             ReportarEquipoScreen(
                 onScan = { c, l, f, h ->
-                    if (c.isBlank()) {
-                        Toast.makeText(context, "Ingresa o escanea el código del equipo", Toast.LENGTH_SHORT).show()
-                    } else {
-                        codigo = c.trim()
-                        lab = l
-                        fecha = f
-                        hora = h
-                        nav.navigate(Rutas.DETALLAR)
+                    val cod = c.trim().uppercase()
+                    when {
+                        cod.isBlank() ->
+                            aviso("Ingresa o escanea el código del equipo")
+                        !FORMATO_CODIGO.matches(cod) ->
+                            aviso("Código no válido. Ejemplo: PC-SISTEMAS-409")
+                        else -> {
+                            codigo = cod
+                            lab = l
+                            fecha = f
+                            hora = h
+                            nav.navigate(Rutas.DETALLAR)
+                        }
                     }
                 }
             )
@@ -72,7 +87,17 @@ fun AppNavigation() {
                 onFotoChange = { fotoUri = it },
                 onAtras = { nav.popBackStack() },
                 onContinuar = {
-                    nav.navigate(Rutas.CONFIRMAR)
+                    val desc = descripcion.trim()
+                    val esOtro = tipo?.etiqueta.equals("Otro", ignoreCase = true)
+                    when {
+                        tipo == null ->
+                            aviso("Selecciona el tipo de daño")
+                        esOtro && desc.isEmpty() ->
+                            aviso("Describe el daño para el tipo \"Otro\"")
+                        desc.isNotEmpty() && desc.length < MIN_DESCRIPCION ->
+                            aviso("La descripción debe tener al menos $MIN_DESCRIPCION caracteres")
+                        else -> nav.navigate(Rutas.CONFIRMAR)
+                    }
                 },
                 modifier = Modifier.statusBarsPadding().navigationBarsPadding()
             )
@@ -87,11 +112,28 @@ fun AppNavigation() {
                 descripcion = descripcion,
                 fotoUri = fotoUri,
                 onAtras = { nav.popBackStack() },
-                onEnviar = {
-                    Toast.makeText(context, "Reporte enviado exitosamente", Toast.LENGTH_SHORT).show()
-                },
+                onEnviar = { mostrarConfirmacion = true },
                 modifier = Modifier.statusBarsPadding().navigationBarsPadding()
             )
+
+            if (mostrarConfirmacion) {
+                AlertDialog(
+                    onDismissRequest = { mostrarConfirmacion = false },
+                    title = { Text("¿Enviar reporte?") },
+                    text = { Text("Una vez enviado no podrás modificarlo.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            mostrarConfirmacion = false
+                            aviso("Reporte enviado exitosamente")
+                            codigo = ""; tipo = null; descripcion = ""; fotoUri = null
+                            nav.popBackStack(Rutas.ESCANEAR, false)
+                        }) { Text("Enviar") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { mostrarConfirmacion = false }) { Text("Revisar") }
+                    }
+                )
+            }
         }
     }
 }
