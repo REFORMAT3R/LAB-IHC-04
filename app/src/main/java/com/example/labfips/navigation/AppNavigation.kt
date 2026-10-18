@@ -14,6 +14,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.labfips.ui.ConfirmarScreen
 import com.example.labfips.ui.DescribirDanioScreen
 import com.example.labfips.ui.ReportarEquipoScreen
 import com.example.labfips.ui.TipoDanio
@@ -23,7 +24,7 @@ import java.time.LocalTime
 private object Rutas {
     const val ESCANEAR = "escanear"
     const val DETALLAR = "detallar"
-    // const val CONFIRMAR = "confirmar"   // pantalla 3 (pendiente)
+    const val CONFIRMAR = "confirmar"
 }
 
 @Composable
@@ -71,8 +72,23 @@ fun AppNavigation() {
                 onFotoChange = { fotoUri = it },
                 onAtras = { nav.popBackStack() },
                 onContinuar = {
-                    // TODO: cuando exista la pantalla 3 -> nav.navigate(Rutas.CONFIRMAR)
-                    Toast.makeText(context, "Pantalla 3 pendiente", Toast.LENGTH_SHORT).show()
+                    nav.navigate(Rutas.CONFIRMAR)
+                },
+                modifier = Modifier.statusBarsPadding().navigationBarsPadding()
+            )
+        }
+
+        // ---------- Pantalla 3: Confirmar ----------
+        composable(Rutas.CONFIRMAR) {
+            ConfirmarScreen(
+                codigoEquipo = codigo,
+                ubicacion = lab,
+                tipoSeleccionado = tipo,
+                descripcion = descripcion,
+                fotoUri = fotoUri,
+                onAtras = { nav.popBackStack() },
+                onEnviar = {
+                    Toast.makeText(context, "Reporte enviado exitosamente", Toast.LENGTH_SHORT).show()
                 },
                 modifier = Modifier.statusBarsPadding().navigationBarsPadding()
             )
