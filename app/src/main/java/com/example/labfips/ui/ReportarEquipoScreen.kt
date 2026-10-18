@@ -1,35 +1,70 @@
-package com.example.labfips
+package com.example.labfips.ui
 
+import android.Manifest
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
+import android.content.pm.PackageManager
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ExperimentalGetImage
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview as CameraXPreview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.outlined.CalendarToday
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.DesktopWindows
 import androidx.compose.material.icons.outlined.QrCode2
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.ViewWeek
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -38,23 +73,23 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
+import com.google.mlkit.vision.barcode.BarcodeScanner
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.common.InputImage
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
-/*
- * Dependencias (build.gradle.kts del módulo app):
- *   implementation("androidx.compose.material:material-icons-extended")
- *   implementation("androidx.compose.material3:material3")
- *
- * Nota: LocalDate/LocalTime requieren minSdk 26 (o habilitar desugaring).
- * Para escanear de verdad: CameraX + ML Kit Barcode Scanning (ver ScannerPreview).
- */
-
-// ---------- Colores ----------
+// ---------- Colores (privados de este archivo) ----------
 private val Blue = Color(0xFF0A3D91)
 private val BlueLight = Color(0xFF1D5BCB)
 private val Background = Color(0xFFF3F5FA)
@@ -66,31 +101,62 @@ private val Amber = Color(0xFFF5A623)
 private val ScanTop = Color(0xFF0E1B33)
 private val ScanBottom = Color(0xFF173058)
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent {
-            MaterialTheme { ReportarEquipoScreen() }
-        }
-    }
-}
-
-// ---------- Pantalla ----------
+// ---------- Pantalla 1: Escanear ----------
 @Composable
 fun ReportarEquipoScreen(
     onScan: (codigo: String, lab: String, fecha: LocalDate, hora: LocalTime) -> Unit = { _, _, _, _ -> }
 ) {
+    val context = LocalContext.current
+
     var codigo by rememberSaveable { mutableStateOf("") }
     var lab by rememberSaveable { mutableStateOf("Lab. Computación IV") }
-    var fecha by remember { mutableStateOf(LocalDate.now()) }
-    var hora by remember { mutableStateOf(LocalTime.now().withSecond(0).withNano(0)) }
+    var fecha by rememberSaveable { mutableStateOf(LocalDate.now()) }
+    var hora by rememberSaveable { mutableStateOf(LocalTime.now().withSecond(0).withNano(0)) }
+    var escaneando by remember { mutableStateOf(false) }
+
+    // Permiso de cámara
+    val permisoCamara = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { concedido ->
+        if (concedido) {
+            escaneando = true
+        } else {
+            Toast.makeText(
+                context,
+                "Necesito el permiso de cámara para escanear. También puedes escribir el código.",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    // Texto e ícono del botón principal según el estado
+    val (textoBoton, iconoBoton) = when {
+        escaneando -> "Detener cámara" to Icons.Outlined.Close
+        codigo.isNotBlank() -> "Continuar" to Icons.AutoMirrored.Filled.ArrowForward
+        else -> "Escanear código" to Icons.Outlined.QrCodeScanner
+    }
 
     Scaffold(
         containerColor = Background,
-        topBar = { Header() },
+        topBar = {
+            Box(Modifier.background(Color.White).statusBarsPadding()) {
+                EncabezadoPaso(titulo = "Reportar equipo", pasoActual = 0)
+            }
+        },
         bottomBar = {
-            BottomAction(onClick = { onScan(codigo, lab, fecha, hora) })
+            BottomAction(
+                texto = textoBoton,
+                icono = iconoBoton,
+                onClick = {
+                    when {
+                        escaneando -> escaneando = false
+                        codigo.isNotBlank() -> onScan(codigo, lab, fecha, hora)
+                        ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+                                PackageManager.PERMISSION_GRANTED -> escaneando = true
+                        else -> permisoCamara.launch(Manifest.permission.CAMERA)
+                    }
+                }
+            )
         }
     ) { padding ->
         Column(
@@ -105,7 +171,14 @@ fun ReportarEquipoScreen(
                 color = TextGray, fontSize = 15.sp, lineHeight = 22.sp
             )
 
-            ScannerPreview()
+            ScannerPreview(
+                escaneando = escaneando,
+                onCodigo = { valor ->
+                    codigo = valor.trim()
+                    escaneando = false
+                    Toast.makeText(context, "Código detectado: $codigo", Toast.LENGTH_SHORT).show()
+                }
+            )
 
             ManualDivider()
 
@@ -117,6 +190,13 @@ fun ReportarEquipoScreen(
                 shape = RoundedCornerShape(20.dp),
                 placeholder = { Text("Ej: PC-SISTEMAS-409", color = Color(0xFF9CA3AF)) },
                 leadingIcon = { Icon(Icons.Outlined.ViewWeek, null, tint = Color(0xFF9CA3AF)) },
+                trailingIcon = {
+                    if (codigo.isNotEmpty()) {
+                        IconButton(onClick = { codigo = "" }) {
+                            Icon(Icons.Outlined.Close, contentDescription = "Borrar código", tint = TextGray)
+                        }
+                    }
+                },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = Color.White,
                     unfocusedContainerColor = Color.White,
@@ -128,7 +208,7 @@ fun ReportarEquipoScreen(
                 "El código está pegado al monitor o al CPU del equipo.",
                 color = LabelGray, fontSize = 12.sp,
                 modifier = Modifier.fillMaxWidth(),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                textAlign = TextAlign.Center
             )
 
             Text(
@@ -137,12 +217,9 @@ fun ReportarEquipoScreen(
                 fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp
             )
 
-            // Laboratorio
             FieldLabel("Laboratorio")
             LaboratorioDropdown(selected = lab, onSelected = { lab = it })
 
-            // Fecha y hora
-            val context = LocalContext.current
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     FieldLabel("Fecha")
@@ -177,45 +254,12 @@ fun ReportarEquipoScreen(
     }
 }
 
-// ---------- Cabecera ----------
+// ---------- Visor del escáner (cámara real) ----------
 @Composable
-private fun Header() {
-    Surface(color = Color.White, shadowElevation = 1.dp) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .statusBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Blue),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("U", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
-            Spacer(Modifier.width(12.dp))
-            Text(
-                "Reportar equipo",
-                color = TextDark, fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
-            // Indicador de pasos (paso 1 de 3)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                Box(Modifier.size(width = 20.dp, height = 6.dp).clip(CircleShape).background(Blue))
-                Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFD5DAE5)))
-                Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFD5DAE5)))
-            }
-        }
-    }
-}
-
-// ---------- Visor del escáner ----------
-@Composable
-private fun ScannerPreview() {
+private fun ScannerPreview(
+    escaneando: Boolean,
+    onCodigo: (String) -> Unit
+) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -224,17 +268,22 @@ private fun ScannerPreview() {
             .background(Brush.verticalGradient(listOf(ScanTop, ScanBottom))),
         contentAlignment = Alignment.Center
     ) {
-        // TODO: aquí va el PreviewView de CameraX (AndroidView) con ML Kit.
-        Canvas(Modifier.matchParentSize()) {
-            // Cuadrícula tenue
-            val step = 22.dp.toPx()
-            val gridColor = Color.White.copy(alpha = 0.05f)
-            var x = 0f
-            while (x < size.width) { drawLine(gridColor, Offset(x, 0f), Offset(x, size.height)); x += step }
-            var y = 0f
-            while (y < size.height) { drawLine(gridColor, Offset(0f, y), Offset(size.width, y)); y += step }
+        // Cámara (solo cuando se está escaneando)
+        if (escaneando) {
+            CamaraEscaner(modifier = Modifier.matchParentSize(), onCodigo = onCodigo)
+        }
 
-            // Esquinas del marco
+        // Marco y cuadrícula
+        Canvas(Modifier.matchParentSize()) {
+            if (!escaneando) {
+                val step = 22.dp.toPx()
+                val gridColor = Color.White.copy(alpha = 0.05f)
+                var x = 0f
+                while (x < size.width) { drawLine(gridColor, Offset(x, 0f), Offset(x, size.height)); x += step }
+                var y = 0f
+                while (y < size.height) { drawLine(gridColor, Offset(0f, y), Offset(size.width, y)); y += step }
+            }
+
             val fw = 175.dp.toPx()
             val fh = 125.dp.toPx()
             val l = (size.width - fw) / 2
@@ -253,15 +302,96 @@ private fun ScannerPreview() {
             corner { moveTo(r - len, b); lineTo(r - rad, b); quadraticTo(r, b, r, b - rad); lineTo(r, b - len) }
         }
 
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(Icons.Outlined.QrCode2, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(36.dp))
-            Spacer(Modifier.height(6.dp))
-            Text("Centra el código aquí", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+        if (!escaneando) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Outlined.QrCode2, null, tint = Color.White.copy(alpha = 0.6f), modifier = Modifier.size(36.dp))
+                Spacer(Modifier.height(6.dp))
+                Text("Centra el código aquí", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+            }
         }
     }
 }
 
-// ---------- Separador "O INGRESAR MANUALMENTE" ----------
+/** Cámara trasera + lectura de QR / códigos de barras con ML Kit. */
+@Composable
+private fun CamaraEscaner(
+    modifier: Modifier,
+    onCodigo: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val lifecycleOwner = context as LifecycleOwner // la Activity es el LifecycleOwner
+    val onCodigoActual by rememberUpdatedState(onCodigo)
+
+    val previewView = remember {
+        PreviewView(context).apply {
+            // COMPATIBLE permite recortar con esquinas redondeadas
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val executor = Executors.newSingleThreadExecutor()
+        val scanner = BarcodeScanning.getClient()
+        val entregado = AtomicBoolean(false)
+        val futuro = ProcessCameraProvider.getInstance(context)
+        var provider: ProcessCameraProvider? = null
+
+        futuro.addListener({
+            val p = futuro.get()
+            provider = p
+
+            val vista = CameraXPreview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
+            }
+            val analisis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+            analisis.setAnalyzer(executor) { proxy ->
+                analizarImagen(proxy, scanner) { valor ->
+                    // Solo entregamos el primer código detectado
+                    if (entregado.compareAndSet(false, true)) onCodigoActual(valor)
+                }
+            }
+
+            try {
+                p.unbindAll()
+                p.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, vista, analisis)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }, ContextCompat.getMainExecutor(context))
+
+        onDispose {
+            provider?.unbindAll()
+            executor.execute { scanner.close() }
+            executor.shutdown()
+        }
+    }
+
+    AndroidView(factory = { previewView }, modifier = modifier)
+}
+
+@androidx.annotation.OptIn(ExperimentalGetImage::class)
+private fun analizarImagen(
+    proxy: ImageProxy,
+    scanner: BarcodeScanner,
+    onValor: (String) -> Unit
+) {
+    val media = proxy.image
+    if (media == null) {
+        proxy.close()
+        return
+    }
+    val imagen = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
+    scanner.process(imagen)
+        .addOnSuccessListener { codigos ->
+            codigos.firstNotNullOfOrNull { it.rawValue }?.let(onValor)
+        }
+        .addOnCompleteListener { proxy.close() }
+}
+
+// ---------- Separador ----------
 @Composable
 private fun ManualDivider() {
     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -282,7 +412,6 @@ private fun FieldLabel(text: String) {
     Text(text, color = TextDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
 }
 
-/** Campo tipo "caja" clicable (laboratorio, fecha, hora). */
 @Composable
 private fun FieldBox(
     text: String,
@@ -342,17 +471,21 @@ private fun LaboratorioDropdown(selected: String, onSelected: (String) -> Unit) 
 
 // ---------- Barra inferior ----------
 @Composable
-private fun BottomAction(onClick: () -> Unit) {
-    Surface(color = Background, shadowElevation = 0.dp) {
+private fun BottomAction(
+    texto: String,
+    icono: ImageVector,
+    onClick: () -> Unit
+) {
+    Surface(color = Background) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+                .padding(top = 12.dp)
         ) {
             Box(
                 modifier = Modifier
+                    .padding(horizontal = 20.dp)
                     .fillMaxWidth()
                     .height(56.dp)
                     .clip(RoundedCornerShape(20.dp))
@@ -361,23 +494,13 @@ private fun BottomAction(onClick: () -> Unit) {
                 contentAlignment = Alignment.Center
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Outlined.QrCodeScanner, null, tint = Color.White)
+                    Icon(icono, null, tint = Color.White)
                     Spacer(Modifier.width(10.dp))
-                    Text("Escanear código", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    Text(texto, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
                 }
             }
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                listOf("① Escanear" to true, "② Detallar" to false, "③ Confirmar" to false).forEach { (label, active) ->
-                    Text(
-                        label, fontSize = 12.sp,
-                        color = if (active) TextDark else LabelGray,
-                        fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal
-                    )
-                }
-            }
+            Spacer(Modifier.height(10.dp))
+            PasosInferiores(pasoActual = 0)
         }
     }
 }
