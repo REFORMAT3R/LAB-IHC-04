@@ -44,9 +44,8 @@ private val AmarilloAvisoTexto = Color(0xFF9E7C0C)
 @Composable
 fun ConfirmarScreen(
     codigoEquipo: String,
-    modeloEquipo: String = "Dell OptiPlex",
-    ubicacion: String = "Oficina 204 – Área de desarrollo",
-    tipoSeleccionado: TipoDanio?,
+    ubicacion: String,
+    tiposSeleccionados: Set<TipoDanio>,
     descripcion: String,
     fotoUri: Uri?,
     onAtras: () -> Unit,
@@ -109,7 +108,7 @@ fun ConfirmarScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "$modeloEquipo — $codigoEquipo",
+                                    text = codigoEquipo,
                                     color = AzulTitulo,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
@@ -126,16 +125,28 @@ fun ConfirmarScreen(
                     HorizontalDivider(color = GrisBorde, thickness = 1.dp)
 
                     // Sección: Problema
-                    SeccionResumen(titulo = "PROBLEMA SELECCIONADO") {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.DesktopMac, contentDescription = null, tint = AzulTitulo)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = tipoSeleccionado?.etiqueta ?: "No especificado",
-                                color = AzulTitulo,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp
-                            )
+                    SeccionResumen(titulo = if (tiposSeleccionados.size > 1) "PROBLEMAS SELECCIONADOS" else "PROBLEMA SELECCIONADO") {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (tiposSeleccionados.isEmpty()) {
+                                Text(
+                                    text = "No especificado",
+                                    color = GrisTexto,
+                                    fontSize = 15.sp
+                                )
+                            } else {
+                                tiposSeleccionados.forEach { tipo ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.DesktopMac, contentDescription = null, tint = AzulTitulo)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = tipo.etiqueta,
+                                            color = AzulTitulo,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 15.sp
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -213,7 +224,7 @@ fun ConfirmarScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Fondo)
-                .padding(16.dp)
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp)
         ) {
             Button(
                 onClick = onEnviar,
@@ -228,6 +239,9 @@ fun ConfirmarScreen(
                 Text("Enviar reporte", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             }
         }
+
+        // Barra de pasos inferior (① Escanear · ② Detallar · ③ Confirmar)
+        PasosInferiores(pasoActual = 2)
     }
 }
 
@@ -293,7 +307,8 @@ fun SeccionResumen(titulo: String, contenido: @Composable () -> Unit) {
 private fun PreviewConfirmarScreen() {
     ConfirmarScreen(
         codigoEquipo = "PC-SISTEMAS-409",
-        tipoSeleccionado = TipoDanio.MONITOR,
+        ubicacion = "Lab. Computación IV",
+        tiposSeleccionados = setOf(TipoDanio.MONITOR, TipoDanio.TECLADO),
         descripcion = "La pantalla parpadea en negro constantemente al encender el equipo.",
         fotoUri = null,
         onAtras = {},
