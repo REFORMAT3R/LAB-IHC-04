@@ -44,8 +44,7 @@ private val AmarilloAvisoTexto = Color(0xFF9E7C0C)
 @Composable
 fun ConfirmarScreen(
     codigoEquipo: String,
-    modeloEquipo: String = "Dell OptiPlex",
-    ubicacion: String = "Oficina 204 – Área de desarrollo",
+    ubicacion: String,
     tipoSeleccionado: TipoDanio?,
     descripcion: String,
     fotoUri: Uri?,
@@ -109,7 +108,7 @@ fun ConfirmarScreen(
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "$modeloEquipo — $codigoEquipo",
+                                    text = codigoEquipo,
                                     color = AzulTitulo,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp
@@ -213,7 +212,7 @@ fun ConfirmarScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .background(Fondo)
-                .padding(16.dp)
+                .padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 10.dp)
         ) {
             Button(
                 onClick = onEnviar,
@@ -228,6 +227,9 @@ fun ConfirmarScreen(
                 Text("Enviar reporte", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
             }
         }
+
+        // Barra de pasos inferior (① Escanear · ② Detallar · ③ Confirmar)
+        PasosInferiores(pasoActual = 2)
     }
 }
 
@@ -293,6 +295,7 @@ fun SeccionResumen(titulo: String, contenido: @Composable () -> Unit) {
 private fun PreviewConfirmarScreen() {
     ConfirmarScreen(
         codigoEquipo = "PC-SISTEMAS-409",
+        ubicacion = "Lab. Computación IV",
         tipoSeleccionado = TipoDanio.MONITOR,
         descripcion = "La pantalla parpadea en negro constantemente al encender el equipo.",
         fotoUri = null,
