@@ -289,23 +289,51 @@ fun AdjuntarFoto(
             Text("Toca para elegir una imagen", color = GrisTexto, fontSize = 12.sp)
         }
     } else {
-        Row(
+        // Vista previa de la foto elegida
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .height(200.dp)
                 .clip(RoundedCornerShape(14.dp))
-                .background(Color.White)
                 .border(1.dp, AzulOscuro, RoundedCornerShape(14.dp))
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .clickable {
+                    selector.launch(
+                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    )
+                }
         ) {
-            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = AzulOscuro)
-            Spacer(Modifier.width(10.dp))
-            Text("Fotografía adjuntada", color = AzulTitulo, modifier = Modifier.weight(1f))
-            Icon(
-                Icons.Default.Close,
-                contentDescription = "Quitar fotografía",
-                tint = GrisTexto,
-                modifier = Modifier.clickable { onFotoChange(null) }
+            VistaPreviaImagen(uri = fotoUri, modifier = Modifier.fillMaxSize())
+
+            // Botón para quitar la foto
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(32.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .clickable { onFotoChange(null) },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "Quitar fotografía",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+
+            // Aviso para cambiarla
+            Text(
+                text = "Toca para cambiar",
+                color = Color.White,
+                fontSize = 12.sp,
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(8.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(Color.Black.copy(alpha = 0.55f))
+                    .padding(horizontal = 10.dp, vertical = 4.dp)
             )
         }
     }

@@ -24,6 +24,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.labfips.ui.ConfirmarScreen
 import com.example.labfips.ui.DescribirDanioScreen
 import com.example.labfips.ui.ReportarEquipoScreen
+import com.example.labfips.ui.esCodigoValido
 import com.example.labfips.ui.ReporteEnviadoDialog
 import com.example.labfips.ui.TipoDanio
 import java.time.LocalDate
@@ -35,8 +36,8 @@ private object Rutas {
     const val CONFIRMAR = "confirmar"
 }
 
-// ---------- Reglas de validación (Fase 5) ----------
-private val FORMATO_CODIGO = Regex("^[A-Z]{2,4}-[A-Z]+-\\d{3}$") // ej: PC-SISTEMAS-409
+// ---------- Reglas de validación ----------
+// El código del equipo (12 dígitos) se valida con esCodigoValido(), definida en ReportarEquipoScreen.kt
 private const val MIN_DESCRIPCION = 10
 
 // Ticket de ejemplo. TODO: reemplazar por el número real que devuelva el servidor/base de datos.
@@ -69,12 +70,12 @@ fun AppNavigation() {
         composable(Rutas.ESCANEAR) {
             ReportarEquipoScreen(
                 onScan = { c, l, f, h ->
-                    val cod = c.trim().uppercase()
+                    val cod = c.trim()
                     when {
                         cod.isBlank() ->
                             aviso("Ingresa o escanea el código del equipo")
-                        !FORMATO_CODIGO.matches(cod) ->
-                            aviso("Código no válido. Ejemplo: PC-SISTEMAS-409")
+                        !esCodigoValido(cod) ->
+                            aviso("Código no válido: debe tener exactamente 12 dígitos")
                         else -> {
                             codigo = cod
                             lab = l
