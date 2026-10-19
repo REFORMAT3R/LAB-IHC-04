@@ -45,7 +45,7 @@ private val AmarilloAvisoTexto = Color(0xFF9E7C0C)
 fun ConfirmarScreen(
     codigoEquipo: String,
     ubicacion: String,
-    tipoSeleccionado: TipoDanio?,
+    tiposSeleccionados: Set<TipoDanio>,
     descripcion: String,
     fotoUri: Uri?,
     onAtras: () -> Unit,
@@ -125,16 +125,28 @@ fun ConfirmarScreen(
                     HorizontalDivider(color = GrisBorde, thickness = 1.dp)
 
                     // Sección: Problema
-                    SeccionResumen(titulo = "PROBLEMA SELECCIONADO") {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.DesktopMac, contentDescription = null, tint = AzulTitulo)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = tipoSeleccionado?.etiqueta ?: "No especificado",
-                                color = AzulTitulo,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 15.sp
-                            )
+                    SeccionResumen(titulo = if (tiposSeleccionados.size > 1) "PROBLEMAS SELECCIONADOS" else "PROBLEMA SELECCIONADO") {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (tiposSeleccionados.isEmpty()) {
+                                Text(
+                                    text = "No especificado",
+                                    color = GrisTexto,
+                                    fontSize = 15.sp
+                                )
+                            } else {
+                                tiposSeleccionados.forEach { tipo ->
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.DesktopMac, contentDescription = null, tint = AzulTitulo)
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Text(
+                                            text = tipo.etiqueta,
+                                            color = AzulTitulo,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 15.sp
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -296,7 +308,7 @@ private fun PreviewConfirmarScreen() {
     ConfirmarScreen(
         codigoEquipo = "PC-SISTEMAS-409",
         ubicacion = "Lab. Computación IV",
-        tipoSeleccionado = TipoDanio.MONITOR,
+        tiposSeleccionados = setOf(TipoDanio.MONITOR, TipoDanio.TECLADO),
         descripcion = "La pantalla parpadea en negro constantemente al encender el equipo.",
         fotoUri = null,
         onAtras = {},
