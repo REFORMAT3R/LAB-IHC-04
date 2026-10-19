@@ -125,8 +125,11 @@ fun AppNavigation() {
                         TextButton(onClick = {
                             mostrarConfirmacion = false
                             aviso("Reporte enviado exitosamente")
-                            codigo = ""; tipo = null; descripcion = ""; fotoUri = null
-                            nav.popBackStack(Rutas.ESCANEAR, false)
+                            codigo = ""; lab = ""; fecha = null; hora = null
+                            tipo = null; descripcion = ""; fotoUri = null
+                            nav.navigate(Rutas.ESCANEAR) {
+                                popUpTo(Rutas.ESCANEAR) { inclusive = true }
+                            }
                         }) { Text("Enviar") }
                     },
                     dismissButton = {
