@@ -27,6 +27,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Button
@@ -70,10 +71,10 @@ enum class TipoDanio(val etiqueta: String) {
 @Composable
 fun DescribirDanioScreen(
     codigoEquipo: String,
-    tipoSeleccionado: TipoDanio?,
+    tiposSeleccionados: Set<TipoDanio>,
     descripcion: String,
     fotoUri: Uri?,
-    onTipoChange: (TipoDanio) -> Unit,
+    onTipoToggle: (TipoDanio) -> Unit,
     onDescripcionChange: (String) -> Unit,
     onFotoChange: (Uri?) -> Unit,
     onAtras: () -> Unit,
@@ -103,7 +104,12 @@ fun DescribirDanioScreen(
             EquipoIdentificado(codigoEquipo)
 
             SeccionTitulo("Tipo de daño")
-            SelectorTipoDanio(tipoSeleccionado, onTipoChange)
+            Text(
+                text = "Puedes elegir más de uno",
+                color = GrisTexto,
+                fontSize = 12.sp
+            )
+            SelectorTipoDanio(tiposSeleccionados, onTipoToggle)
 
             SeccionTitulo("Descripción del problema")
             CampoDescripcion(descripcion, onDescripcionChange)
@@ -115,7 +121,7 @@ fun DescribirDanioScreen(
         }
 
         BotonesNavegacion(
-            continuarHabilitado = tipoSeleccionado != null,
+            continuarHabilitado = tiposSeleccionados.isNotEmpty(),
             onAtras = onAtras,
             onContinuar = onContinuar
         )
@@ -194,27 +200,39 @@ private fun EquipoIdentificado(codigo: String) {
     }
 }
 
+/** Selección múltiple: cada toque activa o desactiva ese tipo de daño. */
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun SelectorTipoDanio(
-    seleccionado: TipoDanio?,
-    onSeleccion: (TipoDanio) -> Unit
+    seleccionados: Set<TipoDanio>,
+    onToggle: (TipoDanio) -> Unit
 ) {
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         TipoDanio.values().forEach { tipo ->
+            val activo = tipo in seleccionados
             FilterChip(
-                selected = tipo == seleccionado,
-                onClick = { onSeleccion(tipo) },
+                selected = activo,
+                onClick = { onToggle(tipo) },
                 label = { Text(tipo.etiqueta) },
+                leadingIcon = if (activo) {
+                    {
+                        Icon(
+                            Icons.Default.Check,
+                            contentDescription = null,
+                            modifier = Modifier.size(FilterChipDefaults.IconSize)
+                        )
+                    }
+                } else null,
                 shape = RoundedCornerShape(20.dp),
                 colors = FilterChipDefaults.filterChipColors(
                     containerColor = Color.White,
                     selectedContainerColor = AzulOscuro,
                     labelColor = AzulTitulo,
-                    selectedLabelColor = Color.White
+                    selectedLabelColor = Color.White,
+                    selectedLeadingIconColor = Color.White
                 )
             )
         }
@@ -352,10 +370,10 @@ fun PasosInferiores(pasoActual: Int) {
 private fun PreviewDescribirDanio() {
     DescribirDanioScreen(
         codigoEquipo = "PC-SISTEMAS-409",
-        tipoSeleccionado = null,
+        tiposSeleccionados = setOf(TipoDanio.MONITOR, TipoDanio.TECLADO),
         descripcion = "",
         fotoUri = null,
-        onTipoChange = {},
+        onTipoToggle = {},
         onDescripcionChange = {},
         onFotoChange = {},
         onAtras = {},
