@@ -1,7 +1,6 @@
 package com.example.labfips.navigation
 
 import android.net.Uri
-import android.widget.Toast
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -16,28 +15,48 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.labfips.ui.ConfirmarScreen
 import com.example.labfips.ui.DescribirDanioScreen
+import com.example.labfips.ui.InicioScreen
+import com.example.labfips.ui.InicioUsuarioScreen
+import com.example.labfips.ui.PantallaPendiente
 import com.example.labfips.ui.ReportarEquipoScreen
 import com.example.labfips.ui.ReporteEnviadoDialog
 import com.example.labfips.ui.TipoDanio
 import java.time.LocalDate
 import java.time.LocalTime
 
+/**
+ * Rutas de todo el sistema. Cada integrante agrega aquí SOLO las suyas.
+ *
+ * Usuario:   INICIO → INICIO_USUARIO → ESCANEAR → DETALLAR → CONFIRMAR → HISTORIAL → (detalle)
+ * Encargado: INICIO → ENCARGADO → (lista de reportes) → (gestión del reporte)
+ */
 private object Rutas {
+    // Integrante 1
+    const val INICIO = "inicio"
+    const val INICIO_USUARIO = "inicio_usuario"
+
+    // Flujo de reporte (ya existente)
     const val ESCANEAR = "escanear"
     const val DETALLAR = "detallar"
     const val CONFIRMAR = "confirmar"
-}
 
-// ---------- Reglas de validación (Fase 5) ----------
-private val FORMATO_CODIGO = Regex("^[A-Z]{2,4}-[A-Z]+-\\d{3}$") // ej: PC-SISTEMAS-409
-private const val MIN_DESCRIPCION = 10
+    // Integrante 2
+    const val HISTORIAL = "historial"
+    // TODO Integrante 2: const val DETALLE = "detalle/{id}"
+
+    // Integrante 3
+    const val ENCARGADO = "encargado"
+    // TODO Integrante 3: const val LISTA_REPORTES = "lista_reportes"
+
+    // TODO Integrante 4: const val GESTION = "gestion/{id}"
+}
 
 // Ticket de ejemplo. TODO: reemplazar por el número real que devuelva el servidor/base de datos.
 private fun generarTicket() = "#TI-${(1000..9999).random()}"
@@ -45,9 +64,8 @@ private fun generarTicket() = "#TI-${(1000..9999).random()}"
 @Composable
 fun AppNavigation() {
     val nav = rememberNavController()
-    val context = LocalContext.current
 
-    // ---- Datos del reporte, compartidos entre pantallas ----
+    // ---- Datos del reporte que se está llenando, compartidos entre pantallas ----
     var codigo by rememberSaveable { mutableStateOf("") }
     var lab by rememberSaveable { mutableStateOf("") }
     var fecha by rememberSaveable { mutableStateOf<LocalDate?>(null) }
@@ -56,38 +74,80 @@ fun AppNavigation() {
     var descripcion by rememberSaveable { mutableStateOf("") }
     var fotoUri by rememberSaveable { mutableStateOf<Uri?>(null) }
 
-    // ---- Estado de los cuadros de la pantalla 3 ----
+    // ---- Estado de los cuadros de la pantalla de confirmación ----
     var mostrarConfirmacion by rememberSaveable { mutableStateOf(false) }
     var mostrarExito by rememberSaveable { mutableStateOf(false) }
     var ticket by rememberSaveable { mutableStateOf("") }
 
-    fun aviso(msg: String) = Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+    /** Deja en blanco el reporte en curso (para empezar uno nuevo o al terminar de enviar). */
+    fun limpiarReporte() {
+        codigo = ""; lab = ""; fecha = null; hora = null
+        tipos = emptySet(); descripcion = ""; fotoUri = null; ticket = ""
+        mostrarConfirmacion = false; mostrarExito = false
+    }
 
-    NavHost(navController = nav, startDestination = Rutas.ESCANEAR) {
+    // Evita que un doble toque navegue dos veces (o saque al usuario de la app sin querer)
+    fun puedeNavegar() =
+        nav.currentBackStackEntry?.lifecycle?.currentState == Lifecycle.State.RESUMED
 
-        // ---------- Pantalla 1: Escanear ----------
-        composable(Rutas.ESCANEAR) {
-            ReportarEquipoScreen(
-                onScan = { c, l, f, h ->
-                    val cod = c.trim().uppercase()
-                    when {
-                        cod.isBlank() ->
-                            aviso("Ingresa o escanea el código del equipo")
-                        !FORMATO_CODIGO.matches(cod) ->
-                            aviso("Código no válido. Ejemplo: PC-SISTEMAS-409")
-                        else -> {
-                            codigo = cod
-                            lab = l
-                            fecha = f
-                            hora = h
-                            nav.navigate(Rutas.DETALLAR)
-                        }
+    fun irA(ruta: String) {
+        if (puedeNavegar()) nav.navigate(ruta)
+    }
+
+    fun volver() {
+        if (puedeNavegar()) nav.popBackStack()
+    }
+
+    NavHost(navController = nav, startDestination = Rutas.INICIO) {
+
+        // =====================================================
+        //  INTEGRANTE 1: Inicio + Inicio del usuario
+        // =====================================================
+
+        // ---------- Pantalla de inicio ----------
+        composable(Rutas.INICIO) {
+            InicioScreen(
+                onEstudiante = { irA(Rutas.INICIO_USUARIO) },
+                onEncargado = { irA(Rutas.ENCARGADO) }
+            )
+        }
+
+        // ---------- Inicio del usuario (menú del estudiante) ----------
+        composable(Rutas.INICIO_USUARIO) {
+            InicioUsuarioScreen(
+                onNuevoReporte = {
+                    limpiarReporte() // cada reporte nuevo empieza vacío
+                    irA(Rutas.ESCANEAR)
+                },
+                onMisReportes = { irA(Rutas.HISTORIAL) },
+                onSalir = {
+                    if (puedeNavegar()) {
+                        nav.navigate(Rutas.INICIO) { popUpTo(Rutas.INICIO) { inclusive = true } }
                     }
                 }
             )
         }
 
-        // ---------- Pantalla 2: Detallar ----------
+        // =====================================================
+        //  FLUJO DE REPORTE (ya existente)
+        // =====================================================
+
+        // ---------- Identificación del equipo ----------
+        // La validación del código (12 dígitos) y sus mensajes de error están dentro de la pantalla.
+        composable(Rutas.ESCANEAR) {
+            ReportarEquipoScreen(
+                onScan = { c, l, f, h ->
+                    codigo = c.trim()
+                    lab = l
+                    fecha = f
+                    hora = h
+                    irA(Rutas.DETALLAR)
+                }
+            )
+        }
+
+        // ---------- Registro del daño ----------
+        // La validación de tipos y descripción y sus mensajes de error están dentro de la pantalla.
         composable(Rutas.DETALLAR) {
             DescribirDanioScreen(
                 codigoEquipo = codigo,
@@ -98,25 +158,13 @@ fun AppNavigation() {
                 onTipoToggle = { t -> tipos = if (t in tipos) tipos - t else tipos + t },
                 onDescripcionChange = { descripcion = it },
                 onFotoChange = { fotoUri = it },
-                onAtras = { nav.popBackStack() },
-                onContinuar = {
-                    val desc = descripcion.trim()
-                    val esOtro = TipoDanio.OTRO in tipos
-                    when {
-                        tipos.isEmpty() ->
-                            aviso("Selecciona al menos un tipo de daño")
-                        esOtro && desc.isEmpty() ->
-                            aviso("Describe el daño para el tipo \"Otro\"")
-                        desc.isNotEmpty() && desc.length < MIN_DESCRIPCION ->
-                            aviso("La descripción debe tener al menos $MIN_DESCRIPCION caracteres")
-                        else -> nav.navigate(Rutas.CONFIRMAR)
-                    }
-                },
+                onAtras = { volver() },
+                onContinuar = { irA(Rutas.CONFIRMAR) },
                 modifier = Modifier.statusBarsPadding().navigationBarsPadding().imePadding()
             )
         }
 
-        // ---------- Pantalla 3: Confirmar ----------
+        // ---------- Confirmación ----------
         composable(Rutas.CONFIRMAR) {
             // Difumina la pantalla mientras se ve el cuadro de éxito (efecto visible en Android 12 o superior)
             val radioDesenfoque by animateDpAsState(
@@ -130,7 +178,7 @@ fun AppNavigation() {
                 tiposSeleccionados = tipos,
                 descripcion = descripcion,
                 fotoUri = fotoUri,
-                onAtras = { nav.popBackStack() },
+                onAtras = { volver() },
                 onEnviar = { mostrarConfirmacion = true },
                 modifier = Modifier
                     .blur(radioDesenfoque)
@@ -164,16 +212,42 @@ fun AppNavigation() {
                     ticket = ticket,
                     conFoto = fotoUri != null,
                     onListo = {
-                        mostrarExito = false
                         // Limpiamos todo SOLO al pulsar "Listo", para que el resumen no quede vacío detrás del cuadro
-                        codigo = ""; lab = ""; fecha = null; hora = null
-                        tipos = emptySet(); descripcion = ""; fotoUri = null; ticket = ""
-                        nav.navigate(Rutas.ESCANEAR) {
-                            popUpTo(Rutas.ESCANEAR) { inclusive = true }
-                        }
+                        limpiarReporte()
+                        // Según el flujo: Confirmación → Historial. Atrás en el historial vuelve al menú.
+                        nav.navigate(Rutas.HISTORIAL) { popUpTo(Rutas.INICIO_USUARIO) }
                     }
                 )
             }
         }
+
+        // =====================================================
+        //  INTEGRANTE 2: Historial de reportes + Detalle y seguimiento
+        //  (reemplazar este bloque por sus pantallas)
+        // =====================================================
+        composable(Rutas.HISTORIAL) {
+            PantallaPendiente(
+                titulo = "Historial de reportes",
+                responsable = "Integrante 2",
+                onVolver = { volver() }
+            )
+        }
+
+        // =====================================================
+        //  INTEGRANTE 3: Panel del encargado + Lista de reportes
+        //  (reemplazar este bloque por sus pantallas)
+        // =====================================================
+        composable(Rutas.ENCARGADO) {
+            PantallaPendiente(
+                titulo = "Panel del encargado",
+                responsable = "Integrante 3",
+                onVolver = { volver() }
+            )
+        }
+
+        // =====================================================
+        //  INTEGRANTE 4: Gestión del reporte
+        //  (agregar aquí su composable)
+        // =====================================================
     }
 }

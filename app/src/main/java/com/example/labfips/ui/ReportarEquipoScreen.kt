@@ -1,10 +1,7 @@
 package com.example.labfips.ui
 
 import android.Manifest
-import android.app.DatePickerDialog
-import android.app.TimePickerDialog
 import android.content.pm.PackageManager
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -17,6 +14,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -32,6 +30,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -55,6 +54,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -73,7 +73,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -83,11 +83,33 @@ import androidx.lifecycle.LifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.common.InputImage
+import kotlinx.coroutines.delay
 import java.time.LocalDate
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+
+// ---------- Regla del código de equipo ----------
+private const val LONGITUD_CODIGO = 12
+private val FORMATO_CODIGO_EQUIPO = Regex("^\\d{$LONGITUD_CODIGO}$")
+
+/** El código de un equipo son exactamente 12 dígitos. */
+fun esCodigoValido(codigo: String): Boolean = FORMATO_CODIGO_EQUIPO.matches(codigo.trim())
+
+/** Devuelve el texto del error del código, o null si está bien. */
+private fun errorDeCodigo(codigo: String): String? = when {
+    codigo.isBlank() ->
+        "Ingresa o escanea el código del equipo"
+    codigo.length < LONGITUD_CODIGO ->
+        "El código debe tener $LONGITUD_CODIGO dígitos (te faltan ${LONGITUD_CODIGO - codigo.length})"
+    !esCodigoValido(codigo) ->
+        "El código solo puede contener números"
+    else -> null
+}
+
+/** Hora actual del celular, sin segundos. */
+private fun horaActual(): LocalTime = LocalTime.now().withSecond(0).withNano(0)
 
 // ---------- Colores (privados de este archivo) ----------
 private val Blue = Color(0xFF0A3D91)
@@ -100,6 +122,7 @@ private val Border = Color(0xFFE1E6F0)
 private val Amber = Color(0xFFF5A623)
 private val ScanTop = Color(0xFF0E1B33)
 private val ScanBottom = Color(0xFF173058)
+private val CampoBloqueado = Color(0xFFEEF1F7)
 
 // ---------- Pantalla 1: Escanear ----------
 @Composable
@@ -110,22 +133,33 @@ fun ReportarEquipoScreen(
 
     var codigo by rememberSaveable { mutableStateOf("") }
     var lab by rememberSaveable { mutableStateOf("Lab. Computación IV") }
-    var fecha by rememberSaveable { mutableStateOf(LocalDate.now()) }
-    var hora by rememberSaveable { mutableStateOf(LocalTime.now().withSecond(0).withNano(0)) }
+    var fecha by remember { mutableStateOf(LocalDate.now()) }
+    var hora by remember { mutableStateOf(horaActual()) }
     var escaneando by remember { mutableStateOf(false) }
+
+    // Indicadores de error / éxito (se muestran debajo de cada recuadro)
+    var errorCodigo by remember { mutableStateOf<String?>(null) }
+    var errorCamara by remember { mutableStateOf<String?>(null) }
+    var codigoEscaneado by remember { mutableStateOf(false) }
+
+    // Fecha y hora se mantienen siempre al día (no se pueden editar)
+    LaunchedEffect(Unit) {
+        while (true) {
+            fecha = LocalDate.now()
+            hora = horaActual()
+            delay(1000)
+        }
+    }
 
     // Permiso de cámara
     val permisoCamara = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { concedido ->
         if (concedido) {
+            errorCamara = null
             escaneando = true
         } else {
-            Toast.makeText(
-                context,
-                "Necesito el permiso de cámara para escanear. También puedes escribir el código.",
-                Toast.LENGTH_LONG
-            ).show()
+            errorCamara = "Sin permiso de cámara. Actívalo en Ajustes > Aplicaciones > Permisos, o escribe el código a mano."
         }
     }
 
@@ -149,10 +183,32 @@ fun ReportarEquipoScreen(
                 icono = iconoBoton,
                 onClick = {
                     when {
-                        escaneando -> escaneando = false
-                        codigo.isNotBlank() -> onScan(codigo, lab, fecha, hora)
+                        escaneando -> {
+                            escaneando = false
+                            errorCamara = null
+                        }
+
+                        codigo.isNotBlank() -> {
+                            val error = errorDeCodigo(codigo)
+                            if (error != null) {
+                                errorCodigo = error
+                            } else {
+                                // Fecha y hora se toman en el momento exacto en que se continúa
+                                onScan(codigo, lab, LocalDate.now(), horaActual())
+                            }
+                        }
+
+                        !context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) -> {
+                            errorCamara = "Este dispositivo no tiene cámara. Escribe el código a mano."
+                        }
+
                         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                                PackageManager.PERMISSION_GRANTED -> escaneando = true
+                                PackageManager.PERMISSION_GRANTED -> {
+                            errorCamara = null
+                            errorCodigo = null
+                            escaneando = true
+                        }
+
                         else -> permisoCamara.launch(Manifest.permission.CAMERA)
                     }
                 }
@@ -171,44 +227,79 @@ fun ReportarEquipoScreen(
                 color = TextGray, fontSize = 15.sp, lineHeight = 22.sp
             )
 
-            ScannerPreview(
-                escaneando = escaneando,
-                onCodigo = { valor ->
-                    codigo = valor.trim()
-                    escaneando = false
-                    Toast.makeText(context, "Código detectado: $codigo", Toast.LENGTH_SHORT).show()
-                }
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ScannerPreview(
+                    escaneando = escaneando,
+                    conError = errorCamara != null,
+                    onCodigo = { valor ->
+                        codigo = valor
+                        escaneando = false
+                        errorCodigo = null
+                        errorCamara = null
+                        codigoEscaneado = true
+                    },
+                    onNoValido = {
+                        errorCamara = "Se leyó un código que no es válido: debe tener $LONGITUD_CODIGO dígitos. Apunta al código del equipo."
+                    },
+                    onErrorCamara = {
+                        escaneando = false
+                        errorCamara = "No se pudo iniciar la cámara. Escribe el código a mano."
+                    }
+                )
+                MensajeError(errorCamara)
+            }
 
             ManualDivider()
 
             OutlinedTextField(
                 value = codigo,
-                onValueChange = { codigo = it },
+                onValueChange = { nuevo ->
+                    val digitos = nuevo.filter(Char::isDigit)
+                    errorCodigo = when {
+                        digitos.length != nuevo.length -> "Solo se permiten números, sin letras ni símbolos"
+                        digitos.length > LONGITUD_CODIGO -> "El código tiene como máximo $LONGITUD_CODIGO dígitos"
+                        else -> null
+                    }
+                    codigoEscaneado = false
+                    codigo = digitos.take(LONGITUD_CODIGO)
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                isError = errorCodigo != null,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 shape = RoundedCornerShape(20.dp),
-                placeholder = { Text("Ej: PC-SISTEMAS-409", color = Color(0xFF9CA3AF)) },
+                placeholder = { Text("Ej: 123456789012", color = Color(0xFF9CA3AF)) },
                 leadingIcon = { Icon(Icons.Outlined.ViewWeek, null, tint = Color(0xFF9CA3AF)) },
                 trailingIcon = {
                     if (codigo.isNotEmpty()) {
-                        IconButton(onClick = { codigo = "" }) {
+                        IconButton(onClick = {
+                            codigo = ""
+                            errorCodigo = null
+                            codigoEscaneado = false
+                        }) {
                             Icon(Icons.Outlined.Close, contentDescription = "Borrar código", tint = TextGray)
                         }
+                    }
+                },
+                supportingText = {
+                    val error = errorCodigo
+                    when {
+                        error != null -> Text(error, color = ColorError)
+                        codigoEscaneado -> Text("✓ Código detectado correctamente", color = ColorExito)
+                        else -> Text(
+                            "El código tiene $LONGITUD_CODIGO dígitos y está pegado al monitor o al CPU del equipo.",
+                            color = LabelGray
+                        )
                     }
                 },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = Color.White,
                     unfocusedContainerColor = Color.White,
+                    errorContainerColor = Color.White,
                     unfocusedBorderColor = Border,
-                    focusedBorderColor = Blue
+                    focusedBorderColor = Blue,
+                    errorBorderColor = ColorError
                 )
-            )
-            Text(
-                "El código está pegado al monitor o al CPU del equipo.",
-                color = LabelGray, fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
             )
 
             Text(
@@ -223,33 +314,25 @@ fun ReportarEquipoScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     FieldLabel("Fecha")
+                    // Sin onClick: la fecha es automática y no se puede cambiar
                     FieldBox(
                         text = fecha.format(DateTimeFormatter.ofPattern("dd / MM / yyyy")),
-                        trailingIcon = Icons.Outlined.CalendarToday,
-                        onClick = {
-                            DatePickerDialog(
-                                context,
-                                { _, y, m, d -> fecha = LocalDate.of(y, m + 1, d) },
-                                fecha.year, fecha.monthValue - 1, fecha.dayOfMonth
-                            ).show()
-                        }
+                        trailingIcon = Icons.Outlined.CalendarToday
                     )
                 }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     FieldLabel("Hora")
+                    // Sin onClick: la hora es automática y no se puede cambiar
                     FieldBox(
                         text = hora.format(DateTimeFormatter.ofPattern("HH : mm")),
-                        trailingIcon = Icons.Outlined.Schedule,
-                        onClick = {
-                            TimePickerDialog(
-                                context,
-                                { _, h, m -> hora = LocalTime.of(h, m) },
-                                hora.hour, hora.minute, true
-                            ).show()
-                        }
+                        trailingIcon = Icons.Outlined.Schedule
                     )
                 }
             }
+            Text(
+                "La fecha y la hora se registran automáticamente.",
+                color = LabelGray, fontSize = 12.sp
+            )
         }
     }
 }
@@ -258,19 +341,31 @@ fun ReportarEquipoScreen(
 @Composable
 private fun ScannerPreview(
     escaneando: Boolean,
-    onCodigo: (String) -> Unit
+    conError: Boolean,
+    onCodigo: (String) -> Unit,
+    onNoValido: () -> Unit,
+    onErrorCamara: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(176.dp)
             .clip(RoundedCornerShape(24.dp))
-            .background(Brush.verticalGradient(listOf(ScanTop, ScanBottom))),
+            .background(Brush.verticalGradient(listOf(ScanTop, ScanBottom)))
+            .then(
+                if (conError) Modifier.border(2.dp, ColorError, RoundedCornerShape(24.dp))
+                else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         // Cámara (solo cuando se está escaneando)
         if (escaneando) {
-            CamaraEscaner(modifier = Modifier.matchParentSize(), onCodigo = onCodigo)
+            CamaraEscaner(
+                modifier = Modifier.matchParentSize(),
+                onCodigo = onCodigo,
+                onNoValido = onNoValido,
+                onError = onErrorCamara
+            )
         }
 
         // Marco y cuadrícula
@@ -312,15 +407,19 @@ private fun ScannerPreview(
     }
 }
 
-/** Cámara trasera + lectura de QR / códigos de barras con ML Kit. */
+/** Cámara trasera + lectura de QR / códigos de barras con ML Kit. Solo acepta códigos de 12 dígitos. */
 @Composable
 private fun CamaraEscaner(
     modifier: Modifier,
-    onCodigo: (String) -> Unit
+    onCodigo: (String) -> Unit,
+    onNoValido: () -> Unit,
+    onError: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = context as LifecycleOwner // la Activity es el LifecycleOwner
     val onCodigoActual by rememberUpdatedState(onCodigo)
+    val onNoValidoActual by rememberUpdatedState(onNoValido)
+    val onErrorActual by rememberUpdatedState(onError)
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -338,27 +437,33 @@ private fun CamaraEscaner(
         var provider: ProcessCameraProvider? = null
 
         futuro.addListener({
-            val p = futuro.get()
-            provider = p
-
-            val vista = CameraXPreview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
-            val analisis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-            analisis.setAnalyzer(executor) { proxy ->
-                analizarImagen(proxy, scanner) { valor ->
-                    // Solo entregamos el primer código detectado
-                    if (entregado.compareAndSet(false, true)) onCodigoActual(valor)
-                }
-            }
-
             try {
+                val p = futuro.get()
+                provider = p
+
+                val vista = CameraXPreview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+                val analisis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                analisis.setAnalyzer(executor) { proxy ->
+                    analizarImagen(proxy, scanner) { valores ->
+                        val valido = valores.firstOrNull { esCodigoValido(it) }
+                        if (valido != null) {
+                            // Solo entregamos el primer código válido
+                            if (entregado.compareAndSet(false, true)) onCodigoActual(valido)
+                        } else {
+                            onNoValidoActual()
+                        }
+                    }
+                }
+
                 p.unbindAll()
                 p.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, vista, analisis)
             } catch (e: Exception) {
                 e.printStackTrace()
+                onErrorActual()
             }
         }, ContextCompat.getMainExecutor(context))
 
@@ -376,7 +481,7 @@ private fun CamaraEscaner(
 private fun analizarImagen(
     proxy: ImageProxy,
     scanner: BarcodeScanner,
-    onValor: (String) -> Unit
+    onValores: (List<String>) -> Unit
 ) {
     val media = proxy.image
     if (media == null) {
@@ -386,7 +491,8 @@ private fun analizarImagen(
     val imagen = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
     scanner.process(imagen)
         .addOnSuccessListener { codigos ->
-            codigos.firstNotNullOfOrNull { it.rawValue }?.let(onValor)
+            val valores = codigos.mapNotNull { it.rawValue?.trim() }
+            if (valores.isNotEmpty()) onValores(valores)
         }
         .addOnCompleteListener { proxy.close() }
 }
@@ -412,6 +518,7 @@ private fun FieldLabel(text: String) {
     Text(text, color = TextDark, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
 }
 
+/** Caja de formulario. Si no recibe onClick, se muestra bloqueada (gris) y no se puede tocar. */
 @Composable
 private fun FieldBox(
     text: String,
@@ -419,15 +526,13 @@ private fun FieldBox(
     leadingIcon: ImageVector? = null,
     trailingIcon: ImageVector? = null,
     highlighted: Boolean = false,
-    onClick: () -> Unit
+    onClick: (() -> Unit)? = null
 ) {
-    Surface(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(52.dp),
-        shape = RoundedCornerShape(20.dp),
-        color = Color.White,
-        border = BorderStroke(if (highlighted) 1.5.dp else 1.dp, if (highlighted) Blue else Border)
-    ) {
+    val forma = RoundedCornerShape(20.dp)
+    val borde = BorderStroke(if (highlighted) 1.5.dp else 1.dp, if (highlighted) Blue else Border)
+    val base = modifier.fillMaxWidth().height(52.dp)
+
+    val contenido: @Composable () -> Unit = {
         Row(
             modifier = Modifier.padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -441,6 +546,25 @@ private fun FieldBox(
                 Icon(trailingIcon, null, tint = TextDark, modifier = Modifier.size(18.dp))
             }
         }
+    }
+
+    if (onClick != null) {
+        Surface(
+            onClick = onClick,
+            modifier = base,
+            shape = forma,
+            color = Color.White,
+            border = borde,
+            content = contenido
+        )
+    } else {
+        Surface(
+            modifier = base,
+            shape = forma,
+            color = CampoBloqueado,
+            border = borde,
+            content = contenido
+        )
     }
 }
 

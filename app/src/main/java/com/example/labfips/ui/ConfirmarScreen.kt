@@ -182,11 +182,20 @@ fun ConfirmarScreen(
                                 )
                             }
                         } else {
-                            Text(
-                                text = "Fotografía adjunta correctamente.",
-                                color = AzulTitulo,
-                                fontSize = 14.sp
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                VistaPreviaImagen(
+                                    uri = fotoUri,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                )
+                                Text(
+                                    text = "Fotografía adjunta correctamente.",
+                                    color = AzulTitulo,
+                                    fontSize = 14.sp
+                                )
+                            }
                         }
                     }
                 }
