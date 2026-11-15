@@ -2,7 +2,6 @@ package com.example.labfips.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
-import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -15,6 +14,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -74,7 +74,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -95,8 +94,19 @@ import java.util.concurrent.atomic.AtomicBoolean
 private const val LONGITUD_CODIGO = 12
 private val FORMATO_CODIGO_EQUIPO = Regex("^\\d{$LONGITUD_CODIGO}$")
 
-/** El código de un equipo son exactamente 12 dígitos. Se usa aquí y en AppNavigation. */
+/** El código de un equipo son exactamente 12 dígitos. */
 fun esCodigoValido(codigo: String): Boolean = FORMATO_CODIGO_EQUIPO.matches(codigo.trim())
+
+/** Devuelve el texto del error del código, o null si está bien. */
+private fun errorDeCodigo(codigo: String): String? = when {
+    codigo.isBlank() ->
+        "Ingresa o escanea el código del equipo"
+    codigo.length < LONGITUD_CODIGO ->
+        "El código debe tener $LONGITUD_CODIGO dígitos (te faltan ${LONGITUD_CODIGO - codigo.length})"
+    !esCodigoValido(codigo) ->
+        "El código solo puede contener números"
+    else -> null
+}
 
 /** Hora actual del celular, sin segundos. */
 private fun horaActual(): LocalTime = LocalTime.now().withSecond(0).withNano(0)
@@ -127,6 +137,11 @@ fun ReportarEquipoScreen(
     var hora by remember { mutableStateOf(horaActual()) }
     var escaneando by remember { mutableStateOf(false) }
 
+    // Indicadores de error / éxito (se muestran debajo de cada recuadro)
+    var errorCodigo by remember { mutableStateOf<String?>(null) }
+    var errorCamara by remember { mutableStateOf<String?>(null) }
+    var codigoEscaneado by remember { mutableStateOf(false) }
+
     // Fecha y hora se mantienen siempre al día (no se pueden editar)
     LaunchedEffect(Unit) {
         while (true) {
@@ -141,13 +156,10 @@ fun ReportarEquipoScreen(
         ActivityResultContracts.RequestPermission()
     ) { concedido ->
         if (concedido) {
+            errorCamara = null
             escaneando = true
         } else {
-            Toast.makeText(
-                context,
-                "Necesito el permiso de cámara para escanear. También puedes escribir el código.",
-                Toast.LENGTH_LONG
-            ).show()
+            errorCamara = "Sin permiso de cámara. Actívalo en Ajustes > Aplicaciones > Permisos, o escribe el código a mano."
         }
     }
 
@@ -171,11 +183,32 @@ fun ReportarEquipoScreen(
                 icono = iconoBoton,
                 onClick = {
                     when {
-                        escaneando -> escaneando = false
-                        // Fecha y hora se toman en el momento exacto en que se continúa
-                        codigo.isNotBlank() -> onScan(codigo, lab, LocalDate.now(), horaActual())
+                        escaneando -> {
+                            escaneando = false
+                            errorCamara = null
+                        }
+
+                        codigo.isNotBlank() -> {
+                            val error = errorDeCodigo(codigo)
+                            if (error != null) {
+                                errorCodigo = error
+                            } else {
+                                // Fecha y hora se toman en el momento exacto en que se continúa
+                                onScan(codigo, lab, LocalDate.now(), horaActual())
+                            }
+                        }
+
+                        !context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY) -> {
+                            errorCamara = "Este dispositivo no tiene cámara. Escribe el código a mano."
+                        }
+
                         ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                                PackageManager.PERMISSION_GRANTED -> escaneando = true
+                                PackageManager.PERMISSION_GRANTED -> {
+                            errorCamara = null
+                            errorCodigo = null
+                            escaneando = true
+                        }
+
                         else -> permisoCamara.launch(Manifest.permission.CAMERA)
                     }
                 }
@@ -194,46 +227,79 @@ fun ReportarEquipoScreen(
                 color = TextGray, fontSize = 15.sp, lineHeight = 22.sp
             )
 
-            ScannerPreview(
-                escaneando = escaneando,
-                onCodigo = { valor ->
-                    codigo = valor
-                    escaneando = false
-                    Toast.makeText(context, "Código detectado: $codigo", Toast.LENGTH_SHORT).show()
-                }
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ScannerPreview(
+                    escaneando = escaneando,
+                    conError = errorCamara != null,
+                    onCodigo = { valor ->
+                        codigo = valor
+                        escaneando = false
+                        errorCodigo = null
+                        errorCamara = null
+                        codigoEscaneado = true
+                    },
+                    onNoValido = {
+                        errorCamara = "Se leyó un código que no es válido: debe tener $LONGITUD_CODIGO dígitos. Apunta al código del equipo."
+                    },
+                    onErrorCamara = {
+                        escaneando = false
+                        errorCamara = "No se pudo iniciar la cámara. Escribe el código a mano."
+                    }
+                )
+                MensajeError(errorCamara)
+            }
 
             ManualDivider()
 
             OutlinedTextField(
                 value = codigo,
-                // Solo dígitos y máximo 12
-                onValueChange = { codigo = it.filter(Char::isDigit).take(LONGITUD_CODIGO) },
+                onValueChange = { nuevo ->
+                    val digitos = nuevo.filter(Char::isDigit)
+                    errorCodigo = when {
+                        digitos.length != nuevo.length -> "Solo se permiten números, sin letras ni símbolos"
+                        digitos.length > LONGITUD_CODIGO -> "El código tiene como máximo $LONGITUD_CODIGO dígitos"
+                        else -> null
+                    }
+                    codigoEscaneado = false
+                    codigo = digitos.take(LONGITUD_CODIGO)
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                isError = errorCodigo != null,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 shape = RoundedCornerShape(20.dp),
                 placeholder = { Text("Ej: 123456789012", color = Color(0xFF9CA3AF)) },
                 leadingIcon = { Icon(Icons.Outlined.ViewWeek, null, tint = Color(0xFF9CA3AF)) },
                 trailingIcon = {
                     if (codigo.isNotEmpty()) {
-                        IconButton(onClick = { codigo = "" }) {
+                        IconButton(onClick = {
+                            codigo = ""
+                            errorCodigo = null
+                            codigoEscaneado = false
+                        }) {
                             Icon(Icons.Outlined.Close, contentDescription = "Borrar código", tint = TextGray)
                         }
+                    }
+                },
+                supportingText = {
+                    val error = errorCodigo
+                    when {
+                        error != null -> Text(error, color = ColorError)
+                        codigoEscaneado -> Text("✓ Código detectado correctamente", color = ColorExito)
+                        else -> Text(
+                            "El código tiene $LONGITUD_CODIGO dígitos y está pegado al monitor o al CPU del equipo.",
+                            color = LabelGray
+                        )
                     }
                 },
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedContainerColor = Color.White,
                     unfocusedContainerColor = Color.White,
+                    errorContainerColor = Color.White,
                     unfocusedBorderColor = Border,
-                    focusedBorderColor = Blue
+                    focusedBorderColor = Blue,
+                    errorBorderColor = ColorError
                 )
-            )
-            Text(
-                "El código tiene 12 dígitos y está pegado al monitor o al CPU del equipo.",
-                color = LabelGray, fontSize = 12.sp,
-                modifier = Modifier.fillMaxWidth(),
-                textAlign = TextAlign.Center
             )
 
             Text(
@@ -275,19 +341,31 @@ fun ReportarEquipoScreen(
 @Composable
 private fun ScannerPreview(
     escaneando: Boolean,
-    onCodigo: (String) -> Unit
+    conError: Boolean,
+    onCodigo: (String) -> Unit,
+    onNoValido: () -> Unit,
+    onErrorCamara: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .height(176.dp)
             .clip(RoundedCornerShape(24.dp))
-            .background(Brush.verticalGradient(listOf(ScanTop, ScanBottom))),
+            .background(Brush.verticalGradient(listOf(ScanTop, ScanBottom)))
+            .then(
+                if (conError) Modifier.border(2.dp, ColorError, RoundedCornerShape(24.dp))
+                else Modifier
+            ),
         contentAlignment = Alignment.Center
     ) {
         // Cámara (solo cuando se está escaneando)
         if (escaneando) {
-            CamaraEscaner(modifier = Modifier.matchParentSize(), onCodigo = onCodigo)
+            CamaraEscaner(
+                modifier = Modifier.matchParentSize(),
+                onCodigo = onCodigo,
+                onNoValido = onNoValido,
+                onError = onErrorCamara
+            )
         }
 
         // Marco y cuadrícula
@@ -333,11 +411,15 @@ private fun ScannerPreview(
 @Composable
 private fun CamaraEscaner(
     modifier: Modifier,
-    onCodigo: (String) -> Unit
+    onCodigo: (String) -> Unit,
+    onNoValido: () -> Unit,
+    onError: () -> Unit
 ) {
     val context = LocalContext.current
     val lifecycleOwner = context as LifecycleOwner // la Activity es el LifecycleOwner
     val onCodigoActual by rememberUpdatedState(onCodigo)
+    val onNoValidoActual by rememberUpdatedState(onNoValido)
+    val onErrorActual by rememberUpdatedState(onError)
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -355,30 +437,33 @@ private fun CamaraEscaner(
         var provider: ProcessCameraProvider? = null
 
         futuro.addListener({
-            val p = futuro.get()
-            provider = p
+            try {
+                val p = futuro.get()
+                provider = p
 
-            val vista = CameraXPreview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
-            val analisis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-            analisis.setAnalyzer(executor) { proxy ->
-                analizarImagen(proxy, scanner) { valor ->
-                    val limpio = valor.trim()
-                    // Si no son 12 dígitos se ignora y la cámara sigue buscando
-                    if (esCodigoValido(limpio) && entregado.compareAndSet(false, true)) {
-                        onCodigoActual(limpio)
+                val vista = CameraXPreview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+                val analisis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                analisis.setAnalyzer(executor) { proxy ->
+                    analizarImagen(proxy, scanner) { valores ->
+                        val valido = valores.firstOrNull { esCodigoValido(it) }
+                        if (valido != null) {
+                            // Solo entregamos el primer código válido
+                            if (entregado.compareAndSet(false, true)) onCodigoActual(valido)
+                        } else {
+                            onNoValidoActual()
+                        }
                     }
                 }
-            }
 
-            try {
                 p.unbindAll()
                 p.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, vista, analisis)
             } catch (e: Exception) {
                 e.printStackTrace()
+                onErrorActual()
             }
         }, ContextCompat.getMainExecutor(context))
 
@@ -396,7 +481,7 @@ private fun CamaraEscaner(
 private fun analizarImagen(
     proxy: ImageProxy,
     scanner: BarcodeScanner,
-    onValor: (String) -> Unit
+    onValores: (List<String>) -> Unit
 ) {
     val media = proxy.image
     if (media == null) {
@@ -406,7 +491,8 @@ private fun analizarImagen(
     val imagen = InputImage.fromMediaImage(media, proxy.imageInfo.rotationDegrees)
     scanner.process(imagen)
         .addOnSuccessListener { codigos ->
-            codigos.firstNotNullOfOrNull { it.rawValue }?.let(onValor)
+            val valores = codigos.mapNotNull { it.rawValue?.trim() }
+            if (valores.isNotEmpty()) onValores(valores)
         }
         .addOnCompleteListener { proxy.close() }
 }
