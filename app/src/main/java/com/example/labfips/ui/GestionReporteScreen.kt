@@ -1,6 +1,7 @@
 package com.example.labfips.ui
 
 import android.net.Uri
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -19,6 +20,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -110,8 +112,16 @@ fun GestionReporteScreen(
     val reporte = reportesMock.find { it.id == reporteId }
     val detalleEstudiante = reportesEstudianteMock.find { it.id == reporteId }
 
+    // Difumina la pantalla mientras se ve el mensaje de éxito (efecto visible en Android 12 o superior)
+    var desenfocar by remember { mutableStateOf(false) }
+    val radioDesenfoque by animateDpAsState(
+        targetValue = if (desenfocar) 16.dp else 0.dp,
+        label = "desenfoque"
+    )
+
     Column(
         modifier = modifier
+            .blur(radioDesenfoque)
             .fillMaxSize()
             .background(Fondo)
             .imePadding()
@@ -138,6 +148,7 @@ fun GestionReporteScreen(
                 reporte = reporte,
                 detalle = detalleEstudiante,
                 onGuardado = onGuardado,
+                onDesenfocar = { desenfocar = it },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -188,6 +199,7 @@ private fun Formulario(
     reporte: ReporteEncargado,
     detalle: ReporteEstudiante?,
     onGuardado: () -> Unit,
+    onDesenfocar: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val observacionInicial = detalle?.observacionesEncargado.orEmpty()
@@ -199,8 +211,17 @@ private fun Formulario(
     var intento by remember { mutableStateOf(false) }
     var confirmar by remember { mutableStateOf(false) }
     var exito by remember { mutableStateOf(false) }
+
+    // Lo que se guardó (para que el mensaje de éxito diga lo correcto)
+    var estadoGuardado by remember { mutableStateOf("") }
+    var cambioEstadoGuardado by remember { mutableStateOf(false) }
+    var conObservacionGuardada by remember { mutableStateOf(false) }
+
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
+
+    // La pantalla se difumina solo mientras se ve el mensaje de éxito
+    LaunchedEffect(exito) { onDesenfocar(exito) }
 
     val errorObservaciones = if (intento) errorDeObservaciones(estadoSel, observaciones) else null
     val sinCambios = estadoSel == reporte.estado && observaciones.trim() == observacionInicial.trim()
@@ -218,12 +239,6 @@ private fun Formulario(
             confirmar = true
         }
     }
-
-    val textoConfirmacion =
-        if (estadoSel != reporte.estado)
-            "El reporte ${reporte.ticket} pasará de «${reporte.estado}» a «$estadoSel» y el estudiante lo verá en su historial."
-        else
-            "Se actualizarán las observaciones del reporte ${reporte.ticket}."
 
     Column(modifier = modifier) {
         Column(
@@ -404,32 +419,34 @@ private fun Formulario(
         }
     }
 
-    // ---------- Confirmación y éxito ----------
+    // ---------- Mensajes personalizados ----------
     if (confirmar) {
-        AlertDialog(
-            onDismissRequest = { confirmar = false },
-            title = { Text("¿Guardar cambios?") },
-            text = { Text(textoConfirmacion) },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmar = false
-                    aplicarCambios(reporte.id, estadoSel, observaciones)
-                    exito = true
-                }) { Text("Guardar") }
+        ConfirmarCambioDialog(
+            ticket = reporte.ticket,
+            estadoAnterior = reporte.estado,
+            estadoNuevo = estadoSel,
+            onConfirmar = {
+                confirmar = false
+                // Se anota qué se guardó ANTES de aplicar el cambio
+                estadoGuardado = estadoSel
+                cambioEstadoGuardado = estadoSel != reporte.estado
+                conObservacionGuardada = observaciones.trim().isNotEmpty()
+                aplicarCambios(reporte.id, estadoSel, observaciones)
+                exito = true
             },
-            dismissButton = {
-                TextButton(onClick = { confirmar = false }) { Text("Cancelar") }
-            }
+            onCancelar = { confirmar = false }
         )
     }
 
     if (exito) {
-        AlertDialog(
-            onDismissRequest = { exito = false; onGuardado() },
-            title = { Text("Cambios guardados") },
-            text = { Text("El estudiante ya puede ver el nuevo estado y tus observaciones en su historial.") },
-            confirmButton = {
-                TextButton(onClick = { exito = false; onGuardado() }) { Text("Listo") }
+        CambioGuardadoDialog(
+            ticket = reporte.ticket,
+            estado = estadoGuardado,
+            cambioEstado = cambioEstadoGuardado,
+            conObservacion = conObservacionGuardada,
+            onListo = {
+                exito = false
+                onGuardado()
             }
         )
     }
