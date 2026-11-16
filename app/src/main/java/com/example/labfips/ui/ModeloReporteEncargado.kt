@@ -1,8 +1,9 @@
 package com.example.labfips.ui
 
+import androidx.compose.runtime.mutableStateListOf
+
 /**
- * Modelo mock de un reporte visto por el encargado.
- * No sustituye el flujo de creación del estudiante: es solo para Panel y Lista.
+ * Modelo de un reporte visto por el encargado (Panel, Lista y Gestión).
  */
 data class ReporteEncargado(
     val id: String,
@@ -11,36 +12,45 @@ data class ReporteEncargado(
     val laboratorio: String = "Lab. Computación IV",
     val fecha: String,
     val descripcion: String,
-    val estado: String
+    val estado: String,
+    /** Dirección de la foto guardada dentro de la app (null si no adjuntó foto). */
+    val fotoUri: String? = null
 )
 
-/** Lista de prueba para visualizar el Panel y la Lista de reportes. */
-val reportesMock = listOf(
+/**
+ * Reportes del encargado.
+ * Es una lista "observable" (mutableStateListOf): cuando alguien la modifica
+ * (por ejemplo la Gestión del reporte), las pantallas que la leen se actualizan solas.
+ *
+ * Los reportes 1, 2 y 3 son los MISMOS que ve el estudiante en reportesEstudianteMock
+ * (mismo id, ticket, equipo y estado). Si cambias uno, cámbialo también en el otro archivo.
+ */
+val reportesMock = mutableStateListOf(
     ReporteEncargado(
         id = "1",
-        ticket = "#TI-1842",
+        ticket = "#TI-4402",
         codigoEquipo = "202411030001",
         laboratorio = "Lab. Computación IV",
         fecha = "15/11/2026",
-        descripcion = "La PC no enciende después de un corte de energía.",
-        estado = "Pendiente"
-    ),
-    ReporteEncargado(
-        id = "2",
-        ticket = "#TI-1843",
-        codigoEquipo = "202411030014",
-        laboratorio = "Lab. Redes",
-        fecha = "14/11/2026",
-        descripcion = "El monitor parpadea y se pone en negro.",
+        descripcion = "Las teclas enter y espacio no responden al presionar.",
         estado = "En revisión"
     ),
     ReporteEncargado(
+        id = "2",
+        ticket = "#TI-3810",
+        codigoEquipo = "202411030014",
+        laboratorio = "Lab. Redes",
+        fecha = "12/11/2026",
+        descripcion = "El monitor parpadea constantemente y se apaga.",
+        estado = "Resuelto"
+    ),
+    ReporteEncargado(
         id = "3",
-        ticket = "#TI-1844",
+        ticket = "#TI-2104",
         codigoEquipo = "202411030027",
         laboratorio = "Lab. Computación III",
-        fecha = "13/11/2026",
-        descripcion = "No hay conexión a internet en el equipo.",
+        fecha = "10/11/2026",
+        descripcion = "Sin acceso a la red local del laboratorio.",
         estado = "Pendiente"
     ),
     ReporteEncargado(

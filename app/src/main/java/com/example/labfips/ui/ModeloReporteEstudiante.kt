@@ -1,5 +1,7 @@
 package com.example.labfips.ui
 
+import androidx.compose.runtime.mutableStateListOf
+
 /**
  * Modelo de reporte para el flujo del estudiante (Historial y Detalle).
  */
@@ -14,10 +16,19 @@ data class ReporteEstudiante(
     val descripcion: String,
     val estado: String,
     val pasoActual: Int,
-    val observacionesEncargado: String? = null
+    val observacionesEncargado: String? = null,
+    /** Dirección de la foto guardada dentro de la app (null si no adjuntó foto). */
+    val fotoUri: String? = null
 )
 
-val reportesEstudianteMock = listOf(
+/**
+ * Reportes del estudiante.
+ * Es una lista "observable" (mutableStateListOf): cuando el encargado cambia un estado
+ * o agrega una observación, el Historial y el Detalle se actualizan solos.
+ *
+ * Los reportes 1, 2 y 3 son los MISMOS que ve el encargado en reportesMock.
+ */
+val reportesEstudianteMock = mutableStateListOf(
     ReporteEstudiante(
         id = "1",
         ticket = "#TI-4402",

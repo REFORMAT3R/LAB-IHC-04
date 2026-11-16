@@ -1,5 +1,6 @@
 package com.example.labfips.ui
 
+import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -146,6 +147,30 @@ fun DetalleSeguimientoScreen(
                         fontSize = 14.sp,
                         lineHeight = 20.sp
                     )
+
+                    HorizontalDivider(color = GrisBorde, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text(
+                        text = "Fotografía de evidencia:",
+                        color = AzulTitulo,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp
+                    )
+                    if (reporte.fotoUri != null) {
+                        VistaPreviaImagen(
+                            uri = Uri.parse(reporte.fotoUri),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(200.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    } else {
+                        Text(
+                            text = "No se adjuntó ninguna fotografía.",
+                            color = GrisTexto,
+                            fontSize = 14.sp
+                        )
+                    }
 
                     HorizontalDivider(color = GrisBorde, modifier = Modifier.padding(vertical = 4.dp))
 

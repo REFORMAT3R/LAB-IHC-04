@@ -89,7 +89,7 @@ fun VistaPreviaImagen(
 }
 
 /** Lee la imagen reducida (máx. ~1024 px) y la gira según la orientación con la que se tomó la foto. */
-private fun cargarBitmap(context: Context, uri: Uri, maxLado: Int = 1024): Bitmap? {
+internal fun cargarBitmap(context: Context, uri: Uri, maxLado: Int = 1024): Bitmap? {
     return try {
         val resolver = context.contentResolver
 
