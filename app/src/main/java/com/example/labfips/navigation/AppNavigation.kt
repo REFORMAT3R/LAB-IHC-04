@@ -22,8 +22,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.labfips.ui.ConfirmarScreen
 import com.example.labfips.ui.DescribirDanioScreen
+import com.example.labfips.ui.EncargadoDashboardScreen
 import com.example.labfips.ui.InicioScreen
 import com.example.labfips.ui.InicioUsuarioScreen
+import com.example.labfips.ui.ListaReportesScreen
 import com.example.labfips.ui.PantallaPendiente
 import com.example.labfips.ui.ReportarEquipoScreen
 import com.example.labfips.ui.ReporteEnviadoDialog
@@ -35,7 +37,7 @@ import java.time.LocalTime
  * Rutas de todo el sistema. Cada integrante agrega aquí SOLO las suyas.
  *
  * Usuario:   INICIO → INICIO_USUARIO → ESCANEAR → DETALLAR → CONFIRMAR → HISTORIAL → (detalle)
- * Encargado: INICIO → ENCARGADO → (lista de reportes) → (gestión del reporte)
+ * Encargado: INICIO → ENCARGADO → LISTA_REPORTES → (gestión del reporte)
  */
 private object Rutas {
     // Integrante 1
@@ -53,7 +55,7 @@ private object Rutas {
 
     // Integrante 3
     const val ENCARGADO = "encargado"
-    // TODO Integrante 3: const val LISTA_REPORTES = "lista_reportes"
+    const val LISTA_REPORTES = "lista_reportes"
 
     // TODO Integrante 4: const val GESTION = "gestion/{id}"
 }
@@ -235,13 +237,18 @@ fun AppNavigation() {
 
         // =====================================================
         //  INTEGRANTE 3: Panel del encargado + Lista de reportes
-        //  (reemplazar este bloque por sus pantallas)
         // =====================================================
         composable(Rutas.ENCARGADO) {
-            PantallaPendiente(
-                titulo = "Panel del encargado",
-                responsable = "Integrante 3",
+            EncargadoDashboardScreen(
+                onVerReportes = { irA(Rutas.LISTA_REPORTES) },
                 onVolver = { volver() }
+            )
+        }
+
+        composable(Rutas.LISTA_REPORTES) {
+            ListaReportesScreen(
+                onAtras = { volver() }
+                // TODO Integrante 4: onReporteClick = { id -> irA("gestion/$id") }
             )
         }
 
