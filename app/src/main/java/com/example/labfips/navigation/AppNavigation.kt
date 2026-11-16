@@ -11,10 +11,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.navigation.NavType
@@ -26,15 +28,25 @@ import com.example.labfips.ui.ConfirmarScreen
 import com.example.labfips.ui.DescribirDanioScreen
 import com.example.labfips.ui.DetalleSeguimientoScreen
 import com.example.labfips.ui.EncargadoDashboardScreen
+import com.example.labfips.ui.GestionReporteScreen
 import com.example.labfips.ui.HistorialScreen
 import com.example.labfips.ui.InicioScreen
 import com.example.labfips.ui.InicioUsuarioScreen
 import com.example.labfips.ui.ListaReportesScreen
 import com.example.labfips.ui.ReportarEquipoScreen
+import com.example.labfips.ui.ReporteEncargado
 import com.example.labfips.ui.ReporteEnviadoDialog
+import com.example.labfips.ui.ReporteEstudiante
 import com.example.labfips.ui.TipoDanio
+import com.example.labfips.ui.guardarFotoReporte
+import com.example.labfips.ui.reportesEstudianteMock
+import com.example.labfips.ui.reportesMock
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 
 private object Rutas {
     const val INICIO = "inicio"
@@ -50,13 +62,28 @@ private object Rutas {
     // Integrante 3
     const val ENCARGADO = "encargado"
     const val LISTA_REPORTES = "lista_reportes"
+
+    // Integrante 4
+    const val GESTION = "gestion/{id}"
 }
 
-private fun generarTicket() = "#TI-${(1000..9999).random()}"
+/** Genera un ticket que no exista todavía en ninguna de las dos listas. */
+private fun generarTicket(): String {
+    var nuevo: String
+    do {
+        nuevo = "#TI-${(1000..9999).random()}"
+    } while (
+        reportesMock.any { it.ticket == nuevo } ||
+        reportesEstudianteMock.any { it.ticket == nuevo }
+    )
+    return nuevo
+}
 
 @Composable
 fun AppNavigation() {
     val nav = rememberNavController()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var codigo by rememberSaveable { mutableStateOf("") }
     var lab by rememberSaveable { mutableStateOf("") }
@@ -70,6 +97,11 @@ fun AppNavigation() {
     var mostrarExito by rememberSaveable { mutableStateOf(false) }
     var ticket by rememberSaveable { mutableStateOf("") }
 
+    // enviando: mientras se copia la foto (evita enviar dos veces)
+    // fotoEnviada: si la foto realmente se guardó con el reporte
+    var enviando by rememberSaveable { mutableStateOf(false) }
+    var fotoEnviada by rememberSaveable { mutableStateOf(false) }
+
     fun limpiarReporte() {
         codigo = ""
         lab = ""
@@ -81,6 +113,50 @@ fun AppNavigation() {
         ticket = ""
         mostrarConfirmacion = false
         mostrarExito = false
+        enviando = false
+        fotoEnviada = false
+    }
+
+    /**
+     * Guarda el reporte recién enviado en las dos listas compartidas:
+     * aparece en el Historial del estudiante y en la Lista del encargado, como "Pendiente".
+     * [rutaFoto] es la copia de la foto guardada dentro de la app (o null si no hay foto).
+     */
+    fun registrarReporte(id: String, nuevoTicket: String, rutaFoto: String?) {
+        val fechaTexto = (fecha ?: LocalDate.now()).format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+        val horaTexto = (hora ?: LocalTime.now()).format(DateTimeFormatter.ofPattern("HH:mm"))
+        val tiposTexto = tipos.joinToString(", ") { it.etiqueta }
+        val descripcionTexto = descripcion.trim().ifEmpty { "Sin descripción adicional." }
+
+        reportesEstudianteMock.add(
+            0,
+            ReporteEstudiante(
+                id = id,
+                ticket = nuevoTicket,
+                codigoEquipo = codigo,
+                laboratorio = lab,
+                fecha = fechaTexto,
+                hora = horaTexto,
+                tipoDanio = tiposTexto,
+                descripcion = descripcionTexto,
+                estado = "Pendiente",
+                pasoActual = 1,
+                fotoUri = rutaFoto
+            )
+        )
+        reportesMock.add(
+            0,
+            ReporteEncargado(
+                id = id,
+                ticket = nuevoTicket,
+                codigoEquipo = codigo,
+                laboratorio = lab,
+                fecha = fechaTexto,
+                descripcion = descripcionTexto,
+                estado = "Pendiente",
+                fotoUri = rutaFoto
+            )
+        )
     }
 
     fun puedeNavegar() =
@@ -162,7 +238,8 @@ fun AppNavigation() {
                 descripcion = descripcion,
                 fotoUri = fotoUri,
                 onAtras = { volver() },
-                onEnviar = { mostrarConfirmacion = true },
+                // Si ya se está enviando, se ignoran los toques repetidos
+                onEnviar = { if (!enviando) mostrarConfirmacion = true },
                 modifier = Modifier
                     .blur(radioDesenfoque)
                     .statusBarsPadding()
@@ -177,8 +254,28 @@ fun AppNavigation() {
                     confirmButton = {
                         TextButton(onClick = {
                             mostrarConfirmacion = false
-                            ticket = generarTicket()
-                            mostrarExito = true
+                            enviando = true
+
+                            val nuevoTicket = generarTicket()
+                            val idReporte = System.currentTimeMillis().toString()
+                            val origen = fotoUri
+                            ticket = nuevoTicket
+
+                            scope.launch {
+                                // 1) Copiar la foto dentro de la app (en segundo plano)
+                                val rutaFoto = if (origen != null) {
+                                    withContext(Dispatchers.IO) {
+                                        guardarFotoReporte(context, origen, idReporte)
+                                    }
+                                } else null
+
+                                // 2) Guardar el reporte para el Historial y para el encargado
+                                registrarReporte(idReporte, nuevoTicket, rutaFoto)
+
+                                fotoEnviada = rutaFoto != null
+                                enviando = false
+                                mostrarExito = true
+                            }
                         }) { Text("Enviar") }
                     },
                     dismissButton = {
@@ -190,7 +287,7 @@ fun AppNavigation() {
             if (mostrarExito) {
                 ReporteEnviadoDialog(
                     ticket = ticket,
-                    conFoto = fotoUri != null,
+                    conFoto = fotoEnviada,
                     onListo = {
                         limpiarReporte()
                         nav.navigate(Rutas.HISTORIAL) { popUpTo(Rutas.INICIO_USUARIO) }
@@ -228,7 +325,21 @@ fun AppNavigation() {
 
         composable(Rutas.LISTA_REPORTES) {
             ListaReportesScreen(
-                onAtras = { volver() }
+                onAtras = { volver() },
+                onReporteClick = { id -> irA("gestion/$id") }
+            )
+        }
+
+        // INTEGRANTE 4
+        composable(
+            route = Rutas.GESTION,
+            arguments = listOf(navArgument("id") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val id = backStackEntry.arguments?.getString("id") ?: ""
+            GestionReporteScreen(
+                reporteId = id,
+                onAtras = { volver() },
+                onGuardado = { volver() }
             )
         }
     }
